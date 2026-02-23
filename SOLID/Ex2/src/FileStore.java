@@ -1,12 +1,16 @@
 import java.util.*;
 
-public class FileStore {
-    private final Map<String, String> files = new HashMap<>();
+public class FileStore implements InvoiceRepository {
 
-    public void save(String name, String content) { files.put(name, content); }
-    public int countLines(String name) {
-        String c = files.getOrDefault(name, "");
-        if (c.isEmpty()) return 0;
-        return c.split("\n").length;
+    private final Map<String,String> storage = new HashMap<>();
+
+    public void save(String id, String text) {
+        storage.put(id, text);
+    }
+
+    public int countLines(String id) {
+        String s = storage.get(id);
+        if (s == null || s.isEmpty()) return 0;
+        return s.split("\n").length;
     }
 }

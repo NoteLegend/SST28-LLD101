@@ -1,42 +1,61 @@
 import java.util.*;
 
 public class CafeteriaSystem {
+
     private final Map<String, MenuItem> menu = new LinkedHashMap<>();
-    private final FileStore store = new FileStore();
+    private final InvoiceRepository repo;
+    private final TaxPolicy taxPolicy;
+    private final DiscountPolicy discountPolicy;
+    private final InvoicePrinter printer;
     private int invoiceSeq = 1000;
 
-    public void addToMenu(MenuItem i) { menu.put(i.id, i); }
+    public CafeteriaSystem(
+            InvoiceRepository repo,
+            TaxPolicy taxPolicy,
+            DiscountPolicy discountPolicy,
+            InvoicePrinter printer
+    ) {
+        this.repo = repo;
+        this.taxPolicy = taxPolicy;
+        this.discountPolicy = discountPolicy;
+        this.printer = printer;
+    }
 
-    // Intentionally SRP-violating: menu mgmt + tax + discount + format + persistence.
+    public void addToMenu(MenuItem i) {
+        menu.put(i.id, i);
+    }
+
     public void checkout(String customerType, List<OrderLine> lines) {
+
         String invId = "INV-" + (++invoiceSeq);
-        StringBuilder out = new StringBuilder();
-        out.append("Invoice# ").append(invId).append("\n");
 
-        double subtotal = 0.0;
-        for (OrderLine l : lines) {
-            MenuItem item = menu.get(l.itemId);
-            double lineTotal = item.price * l.qty;
-            subtotal += lineTotal;
-            out.append(String.format("- %s x%d = %.2f\n", item.name, l.qty, lineTotal));
-        }
+        PricingEngine pricing = new PricingEngine(menu);
+        PricingSummary sum = pricing.calculate(lines);
 
-        double taxPct = TaxRules.taxPercent(customerType);
-        double tax = subtotal * (taxPct / 100.0);
+        double taxPct = taxPolicy.taxPercent(customerType);
+        double tax = sum.subtotal * taxPct / 100.0;
 
-        double discount = DiscountRules.discountAmount(customerType, subtotal, lines.size());
+        double discount =
+                discountPolicy.discount(customerType, sum.subtotal, lines.size());
 
-        double total = subtotal + tax - discount;
+        double total = sum.subtotal + tax - discount;
 
-        out.append(String.format("Subtotal: %.2f\n", subtotal));
-        out.append(String.format("Tax(%.0f%%): %.2f\n", taxPct, tax));
-        out.append(String.format("Discount: -%.2f\n", discount));
-        out.append(String.format("TOTAL: %.2f\n", total));
+        Invoice inv = new Invoice();
+        inv.id = invId;
+        inv.lines = sum.lineDescriptions;
+        inv.subtotal = sum.subtotal;
+        inv.taxPct = taxPct;
+        inv.tax = tax;
+        inv.discount = discount;
+        inv.total = total;
 
-        String printable = InvoiceFormatter.identityFormat(out.toString());
+        String printable = printer.format(inv);
+
         System.out.print(printable);
 
-        store.save(invId, printable);
-        System.out.println("Saved invoice: " + invId + " (lines=" + store.countLines(invId) + ")");
+        repo.save(invId, printable);
+
+        System.out.println("Saved invoice: " + invId +
+                " (lines=" + repo.countLines(invId) + ")");
     }
 }
